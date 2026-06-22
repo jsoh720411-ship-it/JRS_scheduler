@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jasper.scheduler.mapper.ScheduleJobMapper">
+
+    <resultMap id="jobResultMap" type="com.jasper.scheduler.dto.ScheduleJobDto">
+        <id     property="jobId"           column="job_id"/>
+        <result property="reportId"        column="report_id"/>
+        <result property="reportName"      column="report_name"/>
+        <result property="jobLabel"        column="job_label"/>
+        <result property="outputFormats"   column="output_formats"/>
+        <result property="outputTimezone"  column="output_timezone"/>
+        <result property="baseOutputFilename" column="base_output_filename"/>
+        <result property="repoFolderUri"   column="repo_folder_uri"/>
+        <result property="repoSaveToRepository"  column="repo_save_to_repository"/>
+        <result property="repoOverwriteFiles"    column="repo_overwrite_files"/>
+        <result property="repoSequentialFilenames" column="repo_sequential_filenames"/>
+        <result property="jasperJobId"     column="jasper_job_id"/>
+        <result property="status"          column="status"/>
+        <result property="createdBy"       column="created_by"/>
+        <result property="createdAt"       column="created_at"/>
+        <!-- Trigger -->
+        <result property="triggerType"            column="trigger_type"/>
+        <result property="timezone"               column="timezone"/>
+        <result property="startType"              column="start_type"/>
+        <result property="cronExpression"         column="cron_expression"/>
+        <result property="occurrenceCount"        column="occurrence_count"/>
+        <result property="recurrenceInterval"     column="recurrence_interval"/>
+        <result property="recurrenceIntervalUnit" column="recurrence_interval_unit"/>
+        <!-- Notification -->
+        <result property="notificationId"   column="notification_id"/>
+        <result property="subject"          column="subject"/>
+        <result property="messageText"      column="message_text"/>
+        <result property="resultSendType"   column="result_send_type"/>
+        <result property="skipEmptyReports" column="skip_empty_reports"/>
+        <result property="skipNotifOnFail"  column="skip_notif_on_fail"/>
+        <result property="includeStacktraceOnFail" column="include_stacktrace_on_fail"/>
+    </resultMap>
+
+    <select id="findAll" resultMap="jobResultMap">
+        SELECT sj.*, r.report_name,
+               jt.trigger_type, jt.timezone, jt.start_type, jt.cron_expression,
+               jt.occurrence_count, jt.recurrence_interval, jt.recurrence_interval_unit,
+               jmn.notification_id, jmn.subject, jmn.message_text,
+               jmn.result_send_type, jmn.skip_empty_reports,
+               jmn.skip_notif_on_fail, jmn.include_stacktrace_on_fail
+        FROM dbo.SCHEDULE_JOB sj
+        JOIN dbo.REPORT r ON sj.report_id = r.report_id
+        LEFT JOIN dbo.JOB_TRIGGER jt ON sj.job_id = jt.job_id
+        LEFT JOIN dbo.JOB_MAIL_NOTIFICATION jmn ON sj.job_id = jmn.job_id
+        ORDER BY sj.job_id DESC
+    </select>
+
+    <select id="findByStatus" resultMap="jobResultMap">
+        SELECT sj.*, r.report_name,
+               jt.trigger_type, jt.timezone, jt.start_type, jt.cron_expression,
+               jt.occurrence_count, jt.recurrence_interval, jt.recurrence_interval_unit,
+               jmn.notification_id, jmn.subject, jmn.message_text,
+               jmn.result_send_type, jmn.skip_empty_reports,
+               jmn.skip_notif_on_fail, jmn.include_stacktrace_on_fail
+        FROM dbo.SCHEDULE_JOB sj
+        JOIN dbo.REPORT r ON sj.report_id = r.report_id
+        LEFT JOIN dbo.JOB_TRIGGER jt ON sj.job_id = jt.job_id
+        LEFT JOIN dbo.JOB_MAIL_NOTIFICATION jmn ON sj.job_id = jmn.job_id
+        WHERE sj.status = #{status}
+        ORDER BY sj.job_id DESC
+    </select>
+
+    <select id="findById" resultMap="jobResultMap">
+        SELECT sj.*, r.report_name, r.jasper_report_uri,
+               jt.trigger_type, jt.timezone, jt.start_type, jt.cron_expression,
+               jt.start_date, jt.end_date, jt.misfire_instruction,
+               jt.occurrence_count, jt.recurrence_interval, jt.recurrence_interval_unit,
+               jmn.notification_id, jmn.subject, jmn.message_text,
+               jmn.result_send_type, jmn.skip_empty_reports,
+               jmn.skip_notif_on_fail, jmn.include_stacktrace_on_fail
+        FROM dbo.SCHEDULE_JOB sj
+        JOIN dbo.REPORT r ON sj.report_id = r.report_id
+        LEFT JOIN dbo.JOB_TRIGGER jt ON sj.job_id = jt.job_id
+        LEFT JOIN dbo.JOB_MAIL_NOTIFICATION jmn ON sj.job_id = jmn.job_id
+        WHERE sj.job_id = #{jobId}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="jobId">
+        INSERT INTO dbo.SCHEDULE_JOB
+            (report_id, job_label, job_description, output_formats,
+             base_output_filename, output_timezone, repo_folder_uri,
+             repo_save_to_repository, repo_overwrite_files, repo_sequential_filenames,
+             status, created_by)
+        VALUES
+            (#{reportId}, #{jobLabel}, #{jobDescription}, #{outputFormats},
+             #{baseOutputFilename}, #{outputTimezone}, #{repoFolderUri},
+             #{repoSaveToRepository}, #{repoOverwriteFiles}, #{repoSequentialFilenames},
+             #{status}, #{createdBy})
+    </insert>
+
+    <update id="update">
+        UPDATE dbo.SCHEDULE_JOB
+        SET report_id = #{reportId}, job_label = #{jobLabel},
+            job_description = #{jobDescription}, output_formats = #{outputFormats},
+            base_output_filename = #{baseOutputFilename}, output_timezone = #{outputTimezone},
+            repo_folder_uri = #{repoFolderUri},
+            repo_save_to_repository = #{repoSaveToRepository},
+            repo_overwrite_files = #{repoOverwriteFiles},
+            repo_sequential_filenames = #{repoSequentialFilenames},
+            updated_at = SYSDATETIME()
+        WHERE job_id = #{jobId}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE dbo.SCHEDULE_JOB SET status = #{status}, updated_at = SYSDATETIME()
+        WHERE job_id = #{jobId}
+    </update>
+
+    <update id="updateJasperJobId">
+        UPDATE dbo.SCHEDULE_JOB SET jasper_job_id = #{jasperJobId}
+        WHERE job_id = #{jobId}
+    </update>
+
+    <delete id="delete">
+        DELETE FROM dbo.SCHEDULE_JOB WHERE job_id = #{jobId}
+    </delete>
+
+    <!-- Trigger -->
+    <insert id="insertTrigger">
+        INSERT INTO dbo.JOB_TRIGGER
+            (job_id, trigger_type, timezone, start_type, start_date, end_date,
+             misfire_instruction, occurrence_count, recurrence_interval,
+             recurrence_interval_unit, cron_expression)
+        VALUES
+            (#{jobId}, #{triggerType}, #{timezone}, #{startType}, #{startDate}, #{endDate},
+             #{misfireInstruction}, #{occurrenceCount}, #{recurrenceInterval},
+             #{recurrenceIntervalUnit}, #{cronExpression})
+    </insert>
+
+    <update id="updateTrigger">
+        UPDATE dbo.JOB_TRIGGER
+        SET trigger_type = #{triggerType}, timezone = #{timezone},
+            start_type = #{startType}, start_date = #{startDate}, end_date = #{endDate},
+            misfire_instruction = #{misfireInstruction},
+            occurrence_count = #{occurrenceCount},
+            recurrence_interval = #{recurrenceInterval},
+            recurrence_interval_unit = #{recurrenceIntervalUnit},
+            cron_expression = #{cronExpression}
+        WHERE job_id = #{jobId}
+    </update>
+
+    <delete id="deleteTrigger">
+        DELETE FROM dbo.JOB_TRIGGER WHERE job_id = #{jobId}
+    </delete>
+
+    <!-- Notification -->
+    <insert id="insertNotification" useGeneratedKeys="true" keyProperty="notificationId">
+        INSERT INTO dbo.JOB_MAIL_NOTIFICATION
+            (job_id, subject, message_text, result_send_type,
+             skip_empty_reports, skip_notif_on_fail, include_stacktrace_on_fail)
+        VALUES
+            (#{jobId}, #{subject}, #{messageText}, #{resultSendType},
+             #{skipEmptyReports}, #{skipNotifOnFail}, #{includeStacktraceOnFail})
+    </insert>
+
+    <update id="updateNotification">
+        UPDATE dbo.JOB_MAIL_NOTIFICATION
+        SET subject = #{subject}, message_text = #{messageText},
+            result_send_type = #{resultSendType},
+            skip_empty_reports = #{skipEmptyReports},
+            skip_notif_on_fail = #{skipNotifOnFail},
+            include_stacktrace_on_fail = #{includeStacktraceOnFail}
+        WHERE job_id = #{jobId}
+    </update>
+
+    <delete id="deleteNotification">
+        DELETE FROM dbo.JOB_MAIL_NOTIFICATION WHERE job_id = #{jobId}
+    </delete>
+
+    <!-- Recipients -->
+    <insert id="insertRecipientInternal">
+        INSERT INTO dbo.JOB_RECIPIENT_INTERNAL
+            (notification_id, recipient_mode, role, company, recipient_type)
+        VALUES
+            (#{notificationId}, #{recipientMode}, #{role}, #{company}, #{recipientType})
+    </insert>
+
+    <insert id="insertRecipientExternal">
+        INSERT INTO dbo.JOB_RECIPIENT_EXTERNAL
+            (notification_id, contact_email, recipient_type)
+        VALUES
+            (#{notificationId}, #{contactEmail}, #{recipientType})
+    </insert>
+
+    <delete id="deleteRecipientInternalByNotification">
+        DELETE FROM dbo.JOB_RECIPIENT_INTERNAL WHERE notification_id = #{notificationId}
+    </delete>
+
+    <delete id="deleteRecipientExternalByNotification">
+        DELETE FROM dbo.JOB_RECIPIENT_EXTERNAL WHERE notification_id = #{notificationId}
+    </delete>
+
+    <select id="findInternalRecipients" resultType="com.jasper.scheduler.dto.RecipientInternalDto">
+        SELECT recipient_id, notification_id, recipient_mode, role, company, recipient_type
+        FROM dbo.JOB_RECIPIENT_INTERNAL WHERE notification_id = #{notificationId}
+    </select>
+
+    <select id="findExternalRecipients" resultType="com.jasper.scheduler.dto.RecipientExternalDto">
+        SELECT recipient_id, notification_id, contact_email, recipient_type
+        FROM dbo.JOB_RECIPIENT_EXTERNAL WHERE notification_id = #{notificationId}
+    </select>
+
+    <!-- Report Params -->
+    <insert id="insertJobParam">
+        INSERT INTO dbo.JOB_REPORT_PARAM
+            (job_id, param_def_id, param_value, is_dynamic, dynamic_expr)
+        VALUES
+            (#{jobId}, #{paramDefId}, #{paramValue}, #{isDynamic}, #{dynamicExpr})
+    </insert>
+
+    <delete id="deleteJobParamsByJobId">
+        DELETE FROM dbo.JOB_REPORT_PARAM WHERE job_id = #{jobId}
+    </delete>
+
+    <select id="findJobParams" resultType="com.jasper.scheduler.dto.JobParamDto">
+        SELECT jrp.param_id, jrp.job_id, jrp.param_def_id,
+               rpd.param_name, jrp.param_value, jrp.is_dynamic, jrp.dynamic_expr
+        FROM dbo.JOB_REPORT_PARAM jrp
+        JOIN dbo.REPORT_PARAM_DEF rpd ON jrp.param_def_id = rpd.param_def_id
+        WHERE jrp.job_id = #{jobId}
+        ORDER BY rpd.display_order
+    </select>
+
+</mapper>

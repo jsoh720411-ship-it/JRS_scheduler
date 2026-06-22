@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="layout/layout :: head('Report')"></head>
+<body class="app-body">
+<aside th:replace="layout/layout :: sidebar('reports')"></aside>
+<div class="main-wrap">
+    <header th:replace="layout/layout :: topnav"></header>
+    <main class="main">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Report</h1>
+                <p class="page-sub">Jasper 레포트 마스터 관리</p>
+            </div>
+            <a th:href="@{/reports/new}" class="btn btn-primary">
+                <i class="ti ti-plus"></i>레포트 추가
+            </a>
+        </div>
+
+        <div class="card">
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>레포트명</th>
+                        <th>Jasper URI</th>
+                        <th>파라미터 수</th>
+                        <th>상태</th>
+                        <th>등록일</th>
+                        <th style="text-align:center">관리</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr th:each="r : ${reports}" class="data-row">
+                        <td class="fw-500" th:text="${r.reportName}">-</td>
+                        <td class="text-sm text-secondary" th:text="${r.jasperReportUri}">-</td>
+                        <td class="text-center" th:text="${#lists.size(r.params ?: {})}">0</td>
+                        <td>
+                            <span th:if="${r.isActive}"    class="badge badge-active">활성</span>
+                            <span th:unless="${r.isActive}" class="badge badge-disabled">비활성</span>
+                        </td>
+                        <td class="text-sm text-secondary"
+                            th:text="${#temporals.format(r.createdAt,'yyyy-MM-dd')}">-</td>
+                        <td style="text-align:center">
+                            <a th:href="@{/reports/{id}(id=${r.reportId})}" class="btn-sm">
+                                <i class="ti ti-edit"></i>수정
+                            </a>
+                            <button class="btn-sm btn-danger"
+                                    th:attr="onclick='deleteReport('+${r.reportId}+',\''+${r.reportName}+'\')'">
+                                <i class="ti ti-trash"></i>삭제
+                            </button>
+                        </td>
+                    </tr>
+                    <tr th:if="${#lists.isEmpty(reports)}">
+                        <td colspan="6" class="empty-row">등록된 레포트가 없습니다.</td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+</div>
+<div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg"></span></div>
+<script th:src="@{/js/main.js}"></script>
+<script>
+function deleteReport(id, name) {
+    if (!confirm('"' + name + '" 레포트를 삭제하시겠습니까?')) return;
+    apiFetch('/reports/' + id, 'DELETE').then(r => {
+        if (r.success) { showToast(r.message); setTimeout(()=>location.reload(), 800); }
+        else alert(r.message);
+    });
+}
+</script>
+</body>
+</html>
