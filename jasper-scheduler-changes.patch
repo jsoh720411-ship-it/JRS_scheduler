@@ -1,0 +1,286 @@
+diff --git a/src/main/java/com/jasper/scheduler/config/RestTemplateConfig.java b/src/main/java/com/jasper/scheduler/config/RestTemplateConfig.java
+index 0d52cd1..ab3b1b0 100644
+--- a/src/main/java/com/jasper/scheduler/config/RestTemplateConfig.java
++++ b/src/main/java/com/jasper/scheduler/config/RestTemplateConfig.java
+@@ -18,6 +18,10 @@ public class RestTemplateConfig {
+     @Value("${jasper.server.password}")
+     private String jasperPassword;
+ 
++    // Job API의 outputLocale 필드 기본값. 필요 시 application.yml에서 jasper.output-locale로 override
++    @Value("${jasper.output-locale:en_GB}")
++    private String outputLocale;
++
+     @Bean
+     public RestTemplate restTemplate() {
+         HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory();
+@@ -29,4 +33,5 @@ public class RestTemplateConfig {
+     public String getJasperUrl()      { return jasperUrl; }
+     public String getJasperUsername() { return jasperUsername; }
+     public String getJasperPassword() { return jasperPassword; }
++    public String getOutputLocale()   { return outputLocale; }
+ }
+diff --git a/src/main/java/com/jasper/scheduler/service/JasperApiService.java b/src/main/java/com/jasper/scheduler/service/JasperApiService.java
+index 6af4ebc..10011e2 100644
+--- a/src/main/java/com/jasper/scheduler/service/JasperApiService.java
++++ b/src/main/java/com/jasper/scheduler/service/JasperApiService.java
+@@ -12,14 +12,12 @@ import org.springframework.web.client.RestTemplate;
+ 
+ import java.nio.charset.StandardCharsets;
+ import java.time.LocalDateTime;
+-import java.time.format.DateTimeFormatter;
+ import java.util.*;
+ 
+ @Service
+ public class JasperApiService {
+ 
+     private static final Logger log = LoggerFactory.getLogger(JasperApiService.class);
+-    private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+ 
+     private final RestTemplate restTemplate;
+     private final RestTemplateConfig config;
+@@ -62,12 +60,13 @@ public class JasperApiService {
+             Map<String, Object> body = buildApiBody(job, toAddresses, ccAddresses, bccAddresses);
+ 
+             // 3. Jasper REST API 호출
++            // 주의: Jasper REST v2의 jobs 리소스는 생성도 PUT을 사용한다 (POST 아님 — 공식 문서/검증된 curl 기준)
+             HttpHeaders headers = createHeaders();
+             headers.setContentType(MediaType.APPLICATION_JSON);
+             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+ 
+             String url = config.getJasperUrl() + "/rest_v2/jobs";
+-            ResponseEntity<Map> response = restTemplate.postForEntity(url, entity, Map.class);
++            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.PUT, entity, Map.class);
+ 
+             String jasperJobId = response.getBody() != null
+                 ? String.valueOf(response.getBody().get("id")) : null;
+@@ -141,9 +140,11 @@ public class JasperApiService {
+     private Map<String, Object> buildApiBody(ScheduleJobDto job,
+                                               Collection<String> to, Collection<String> cc, Collection<String> bcc) {
+         Map<String, Object> body = new LinkedHashMap<>();
++        body.put("version",            0);   // Jasper 리소스 표준 버전 필드 (생성 시 항상 0)
+         body.put("label",              job.getJobLabel());
+         body.put("description",        job.getJobDescription());
+         body.put("baseOutputFilename", job.getBaseOutputFilename());
++        body.put("outputLocale",       config.getOutputLocale());
+         body.put("outputTimeZone",     job.getOutputTimezone());
+ 
+         // outputFormats
+@@ -164,18 +165,24 @@ public class JasperApiService {
+         body.put("source", source);
+ 
+         // trigger
+-        body.put("trigger", buildTrigger(job));
++        // Jasper Server 자체 스케줄러(Quartz)는 사용하지 않는다.
++        // 반복/주기 판단은 ScheduleRunner(자바 프로그램)가 직접 수행하고,
++        // Jasper에는 호출 시점에 "1회만 즉시 실행"하는 단발성 트리거만 전달한다.
++        body.put("trigger", buildImmediateTrigger(job));
+ 
+         // repositoryDestination
+         Map<String, Object> repo = new LinkedHashMap<>();
+-        repo.put("folderURI",           job.getRepoFolderUri());
+-        repo.put("saveToRepository",    job.isRepoSaveToRepository());
+-        repo.put("overwriteFiles",      job.isRepoOverwriteFiles());
+-        repo.put("sequentialFilenames", job.isRepoSequentialFilenames());
++        repo.put("version",              0);
++        repo.put("folderURI",            job.getRepoFolderUri());
++        repo.put("saveToRepository",     job.isRepoSaveToRepository());
++        repo.put("overwriteFiles",       job.isRepoOverwriteFiles());
++        repo.put("sequentialFilenames",  job.isRepoSequentialFilenames());
++        repo.put("usingDefaultReportOutputFolderURI", false);
+         body.put("repositoryDestination", repo);
+ 
+         // mailNotification
+         Map<String, Object> mail = new LinkedHashMap<>();
++        mail.put("version",     0);
+         mail.put("subject",     job.getSubject());
+         mail.put("messageText", job.getMessageText());
+         mail.put("resultSendType",               job.getResultSendType());
+@@ -183,9 +190,10 @@ public class JasperApiService {
+         mail.put("skipNotificationWhenJobFails", job.isSkipNotifOnFail());
+         mail.put("includingStackTraceWhenJobFails", job.isIncludeStacktraceOnFail());
+ 
+-        if (!to.isEmpty())  mail.put("toAddresses",  Collections.singletonMap("address", to));
+-        if (!cc.isEmpty())  mail.put("ccAddresses",  Collections.singletonMap("address", cc));
+-        if (!bcc.isEmpty()) mail.put("bccAddresses", Collections.singletonMap("address", bcc));
++        // 검증된 요청과 동일하게, 비어있어도 키 자체는 항상 포함 (예: "bccAddresses": {"address": []})
++        mail.put("toAddresses",  Collections.singletonMap("address", to));
++        mail.put("ccAddresses",  Collections.singletonMap("address", cc));
++        mail.put("bccAddresses", Collections.singletonMap("address", bcc));
+ 
+         body.put("mailNotification", mail);
+         return body;
+@@ -220,27 +228,23 @@ public class JasperApiService {
+     }
+ 
+     // ── Trigger 조립 ───────────────────────────────────────────
+-    private Map<String, Object> buildTrigger(ScheduleJobDto job) {
++    // 로컬 DB의 트리거 타입(SIMPLE/CALENDAR)이 무엇이든, Jasper에는 항상
++    // "지금 1회만 즉시 실행"하는 동일한 단발성 simpleTrigger만 보낸다.
++    // 실제 반복 스케줄링은 ScheduleRunner가 자바 코드로 직접 판단해서
++    // executeJob()을 그때그때 호출하는 방식으로 처리하기 때문에,
++    // Jasper 쪽에 별도의 반복 주기를 등록할 필요가 없다 (중복 발송 방지).
++    private Map<String, Object> buildImmediateTrigger(ScheduleJobDto job) {
++        Map<String, Object> simple = new LinkedHashMap<>();
++        simple.put("version",                0);
++        simple.put("timezone",               job.getTimezone());
++        simple.put("startType",              1);   // 1 = 즉시(NOW)
++        simple.put("occurrenceCount",        1);   // 1회만 실행 (Jasper가 스스로 반복하지 않음)
++        simple.put("recurrenceInterval",     1);   // occurrenceCount=1이라 실제로는 사용되지 않음
++        simple.put("recurrenceIntervalUnit", "DAY");
++        simple.put("misfireInstruction",     0);
++
+         Map<String, Object> trigger = new LinkedHashMap<>();
+-        if ("CALENDAR".equals(job.getTriggerType())) {
+-            Map<String, Object> cal = new LinkedHashMap<>();
+-            cal.put("timezone",         job.getTimezone());
+-            cal.put("startType",        job.getStartType());
+-            cal.put("misfireInstruction", job.getMisfireInstruction());
+-            if (job.getStartDate() != null) cal.put("startDate", FMT.format(job.getStartDate()));
+-            if (job.getEndDate()   != null) cal.put("endDate",   FMT.format(job.getEndDate()));
+-            cal.put("cronExpression", job.getCronExpression());
+-            trigger.put("calendarTrigger", cal);
+-        } else {
+-            Map<String, Object> simple = new LinkedHashMap<>();
+-            simple.put("timezone",                job.getTimezone());
+-            simple.put("startType",               job.getStartType());
+-            simple.put("occurrenceCount",         job.getOccurrenceCount());
+-            simple.put("recurrenceInterval",      job.getRecurrenceInterval());
+-            simple.put("recurrenceIntervalUnit",  job.getRecurrenceIntervalUnit());
+-            simple.put("misfireInstruction",      job.getMisfireInstruction());
+-            trigger.put("simpleTrigger", simple);
+-        }
++        trigger.put("simpleTrigger", simple);
+         return trigger;
+     }
+ 
+@@ -250,6 +254,7 @@ public class JasperApiService {
+         String encoded = Base64.getEncoder()
+             .encodeToString(creds.getBytes(StandardCharsets.UTF_8));
+         headers.set("Authorization", "Basic " + encoded);
++        headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
+         return headers;
+     }
+ 
+diff --git a/src/main/java/com/jasper/scheduler/service/ScheduleRunner.java b/src/main/java/com/jasper/scheduler/service/ScheduleRunner.java
+index c545fb2..8c33f95 100644
+--- a/src/main/java/com/jasper/scheduler/service/ScheduleRunner.java
++++ b/src/main/java/com/jasper/scheduler/service/ScheduleRunner.java
+@@ -8,6 +8,7 @@ import org.springframework.scheduling.annotation.Scheduled;
+ import org.springframework.scheduling.support.CronExpression;
+ import org.springframework.stereotype.Service;
+ 
++import java.time.Duration;
+ import java.time.LocalDateTime;
+ import java.util.List;
+ 
+@@ -45,7 +46,10 @@ public class ScheduleRunner {
+     }
+ 
+     private boolean shouldFire(ScheduleJobDto job, LocalDateTime now) {
+-        if ("CALENDAR".equals(job.getTriggerType()) && job.getCronExpression() != null) {
++        if ("CALENDAR".equals(job.getTriggerType())) {
++            if (job.getCronExpression() == null) {
++                return false;
++            }
+             try {
+                 CronExpression cron = CronExpression.parse(job.getCronExpression());
+                 LocalDateTime next = cron.next(now.minusMinutes(1));
+@@ -54,8 +58,66 @@ public class ScheduleRunner {
+                     && next.isAfter(now.minusMinutes(1));
+             } catch (Exception e) {
+                 log.warn("Invalid cron expression for job {}: {}", job.getJobId(), job.getCronExpression());
++                return false;
+             }
++        } else if ("SIMPLE".equals(job.getTriggerType())) {
++            return shouldFireSimple(job, now);
+         }
+         return false;
+     }
++
++    /**
++     * SIMPLE 트리거 실행 시각 판단.
++     * - 기준 시작 시각: start_date가 있으면 그것을, 없으면(start_type=1 즉시) Job 생성 시각(created_at)을 기준으로 함
++     * - occurrence_count: null이면 1회만, -1이면 무제한, 그 외는 지정 횟수만큼만 반복
++     * - 매 폴링(1분)마다 "이번 분 사이에 들어오는 회차가 있는가"를 계산해서 판단 (CALENDAR 트리거와 동일한 1분 윈도우 방식)
++     */
++    private boolean shouldFireSimple(ScheduleJobDto job, LocalDateTime now) {
++        LocalDateTime start = job.getStartDate() != null ? job.getStartDate() : job.getCreatedAt();
++        if (start == null) {
++            log.warn("Job {}: SIMPLE 트리거의 기준 시작 시각이 없어 실행 여부를 판단할 수 없습니다.", job.getJobId());
++            return false;
++        }
++        if (now.isBefore(start)) {
++            return false; // 아직 시작 전
++        }
++        if (job.getEndDate() != null && now.isAfter(job.getEndDate())) {
++            return false; // 종료 시각을 지남
++        }
++
++        int interval = (job.getRecurrenceInterval() != null && job.getRecurrenceInterval() > 0)
++            ? job.getRecurrenceInterval() : 1;
++        Duration step = intervalDuration(job.getRecurrenceIntervalUnit(), interval);
++        if (step == null || step.isZero() || step.isNegative()) {
++            log.warn("Job {}: 잘못된 recurrenceIntervalUnit '{}' - 실행하지 않음.",
++                job.getJobId(), job.getRecurrenceIntervalUnit());
++            return false;
++        }
++
++        long elapsedMillis = Duration.between(start, now).toMillis();
++        long occurrenceIndex = elapsedMillis / step.toMillis();   // 0 = 시작 시각의 첫 실행
++        LocalDateTime occurrenceTime = start.plus(step.multipliedBy(occurrenceIndex));
++
++        Integer rawCount = job.getOccurrenceCount();
++        int effectiveCount = (rawCount == null) ? 1 : rawCount;  // null이면 "1회만 실행"으로 간주
++        boolean unlimited = effectiveCount == -1;                 // DDL 정의: -1 = 무제한
++        if (!unlimited && occurrenceIndex >= effectiveCount) {
++            return false; // 지정된 반복 횟수를 모두 실행함
++        }
++
++        LocalDateTime windowStart = now.minusMinutes(1);
++        return !occurrenceTime.isBefore(windowStart) && !occurrenceTime.isAfter(now);
++    }
++
++    // DDL 제약상 recurrence_interval_unit은 MINUTE/HOUR/DAY/WEEK만 허용됨
++    private Duration intervalDuration(String unit, int interval) {
++        if (unit == null) return null;
++        switch (unit.toUpperCase()) {
++            case "MINUTE": return Duration.ofMinutes(interval);
++            case "HOUR":   return Duration.ofHours(interval);
++            case "DAY":    return Duration.ofDays(interval);
++            case "WEEK":   return Duration.ofDays(7L * interval);
++            default:       return null;
++        }
++    }
+ }
+diff --git a/src/main/resources/application.yml.example b/src/main/resources/application.yml.example
+index 75da1c1..2db8810 100644
+--- a/src/main/resources/application.yml.example
++++ b/src/main/resources/application.yml.example
+@@ -29,6 +29,7 @@ jasper:
+     url: http://localhost:8085/jasperserver
+     username: jasperadmin
+     password: jasperadmin
++  output-locale: en_GB
+ 
+ logging:
+   level:
+diff --git a/src/main/resources/mapper/ScheduleJobMapper.xml b/src/main/resources/mapper/ScheduleJobMapper.xml
+index 21f5c54..d399b6d 100644
+--- a/src/main/resources/mapper/ScheduleJobMapper.xml
++++ b/src/main/resources/mapper/ScheduleJobMapper.xml
+@@ -41,6 +41,7 @@
+     <select id="findAll" resultMap="jobResultMap">
+         SELECT sj.*, r.report_name,
+                jt.trigger_type, jt.timezone, jt.start_type, jt.cron_expression,
++               jt.start_date, jt.end_date, jt.misfire_instruction,
+                jt.occurrence_count, jt.recurrence_interval, jt.recurrence_interval_unit,
+                jmn.notification_id, jmn.subject, jmn.message_text,
+                jmn.result_send_type, jmn.skip_empty_reports,
+@@ -55,6 +56,7 @@
+     <select id="findByStatus" resultMap="jobResultMap">
+         SELECT sj.*, r.report_name,
+                jt.trigger_type, jt.timezone, jt.start_type, jt.cron_expression,
++               jt.start_date, jt.end_date, jt.misfire_instruction,
+                jt.occurrence_count, jt.recurrence_interval, jt.recurrence_interval_unit,
+                jmn.notification_id, jmn.subject, jmn.message_text,
+                jmn.result_send_type, jmn.skip_empty_reports,

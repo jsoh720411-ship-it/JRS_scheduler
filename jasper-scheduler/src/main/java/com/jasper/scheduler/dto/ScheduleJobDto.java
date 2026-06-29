@@ -31,8 +31,10 @@ public class ScheduleJobDto {
     private String triggerType;
     private String timezone;
     private int startType;
-    private String startDate;
-    private String endDate;
+    @com.fasterxml.jackson.databind.annotation.JsonDeserialize(using = com.jasper.scheduler.config.FlexibleLocalDateTimeDeserializer.class)
+    private java.time.LocalDateTime startDate;
+    @com.fasterxml.jackson.databind.annotation.JsonDeserialize(using = com.jasper.scheduler.config.FlexibleLocalDateTimeDeserializer.class)
+    private java.time.LocalDateTime endDate;
     private int misfireInstruction;
     private Integer occurrenceCount;
     private Integer recurrenceInterval;

@@ -12,14 +12,12 @@ import org.springframework.web.client.RestTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @Service
 public class JasperApiService {
 
     private static final Logger log = LoggerFactory.getLogger(JasperApiService.class);
-    private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private final RestTemplate restTemplate;
     private final RestTemplateConfig config;
@@ -52,22 +50,23 @@ public class JasperApiService {
         execLog.setTriggeredBy(triggeredBy);
 
         try {
-            // 1. 수신자 이메일 수집
-            List<String> toAddresses  = new ArrayList<>();
-            List<String> ccAddresses  = new ArrayList<>();
-            List<String> bccAddresses = new ArrayList<>();
+            // 1. 수신자 이메일 수집 (Set으로 중복 자동 제거, 순서 보존)
+            Set<String> toAddresses  = new LinkedHashSet<>();
+            Set<String> ccAddresses  = new LinkedHashSet<>();
+            Set<String> bccAddresses = new LinkedHashSet<>();
             collectEmails(job, toAddresses, ccAddresses, bccAddresses);
 
             // 2. API Body 조립
             Map<String, Object> body = buildApiBody(job, toAddresses, ccAddresses, bccAddresses);
 
             // 3. Jasper REST API 호출
+            // 주의: Jasper REST v2의 jobs 리소스는 생성도 PUT을 사용한다 (POST 아님 — 공식 문서/검증된 curl 기준)
             HttpHeaders headers = createHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
 
             String url = config.getJasperUrl() + "/rest_v2/jobs";
-            ResponseEntity<Map> response = restTemplate.postForEntity(url, entity, Map.class);
+            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.PUT, entity, Map.class);
 
             String jasperJobId = response.getBody() != null
                 ? String.valueOf(response.getBody().get("id")) : null;
@@ -93,8 +92,10 @@ public class JasperApiService {
     }
 
     // ── 수신자 이메일 수집 ─────────────────────────────────────
+    // 같은 사람이 여러 role/company 규칙에 동시에 걸려도 Set 덕분에 한 번만 들어간다.
+    // 또한 TO > CC > BCC 우선순위로, 같은 사람이 여러 카테고리에 걸려도 한 곳에만 남긴다.
     private void collectEmails(ScheduleJobDto job,
-                                List<String> toList, List<String> ccList, List<String> bccList) {
+                                Set<String> toList, Set<String> ccList, Set<String> bccList) {
 
         List<RecipientInternalDto> internals =
             jobMapper.findInternalRecipients(job.getNotificationId());
@@ -106,32 +107,44 @@ public class JasperApiService {
             } else {
                 emails = internalUserMapper.findEmailsByCompany(r.getCompany());
             }
-            addToList(r.getRecipientType().trim(), emails, toList, ccList, bccList);
+            addToSet(r.getRecipientType().trim(), emails, toList, ccList, bccList);
         }
 
         List<RecipientExternalDto> externals =
             jobMapper.findExternalRecipients(job.getNotificationId());
 
         for (RecipientExternalDto r : externals) {
-            addToList(r.getRecipientType().trim(),
+            addToSet(r.getRecipientType().trim(),
                 Collections.singletonList(r.getContactEmail()), toList, ccList, bccList);
         }
     }
 
-    private void addToList(String type, List<String> emails,
-                            List<String> to, List<String> cc, List<String> bcc) {
-        if ("TO".equals(type))  to.addAll(emails);
-        else if ("CC".equals(type))  cc.addAll(emails);
-        else if ("BCC".equals(type)) bcc.addAll(emails);
+    private void addToSet(String type, List<String> emails,
+                           Set<String> to, Set<String> cc, Set<String> bcc) {
+        for (String email : emails) {
+            // TO에 이미 있으면 CC/BCC에 굳이 또 넣지 않는다 (우선순위: TO > CC > BCC)
+            if (to.contains(email)) continue;
+            if ("TO".equals(type)) {
+                to.add(email);
+                cc.remove(email);
+                bcc.remove(email);
+            } else if ("CC".equals(type)) {
+                if (!cc.contains(email)) cc.add(email);
+            } else if ("BCC".equals(type)) {
+                if (!cc.contains(email)) bcc.add(email);
+            }
+        }
     }
 
     // ── API Body 조립 ──────────────────────────────────────────
     private Map<String, Object> buildApiBody(ScheduleJobDto job,
-                                              List<String> to, List<String> cc, List<String> bcc) {
+                                              Collection<String> to, Collection<String> cc, Collection<String> bcc) {
         Map<String, Object> body = new LinkedHashMap<>();
+        body.put("version",            0);   // Jasper 리소스 표준 버전 필드 (생성 시 항상 0)
         body.put("label",              job.getJobLabel());
         body.put("description",        job.getJobDescription());
         body.put("baseOutputFilename", job.getBaseOutputFilename());
+        body.put("outputLocale",       config.getOutputLocale());
         body.put("outputTimeZone",     job.getOutputTimezone());
 
         // outputFormats
@@ -152,18 +165,24 @@ public class JasperApiService {
         body.put("source", source);
 
         // trigger
-        body.put("trigger", buildTrigger(job));
+        // Jasper Server 자체 스케줄러(Quartz)는 사용하지 않는다.
+        // 반복/주기 판단은 ScheduleRunner(자바 프로그램)가 직접 수행하고,
+        // Jasper에는 호출 시점에 "1회만 즉시 실행"하는 단발성 트리거만 전달한다.
+        body.put("trigger", buildImmediateTrigger(job));
 
         // repositoryDestination
         Map<String, Object> repo = new LinkedHashMap<>();
-        repo.put("folderURI",           job.getRepoFolderUri());
-        repo.put("saveToRepository",    job.isRepoSaveToRepository());
-        repo.put("overwriteFiles",      job.isRepoOverwriteFiles());
-        repo.put("sequentialFilenames", job.isRepoSequentialFilenames());
+        repo.put("version",              0);
+        repo.put("folderURI",            job.getRepoFolderUri());
+        repo.put("saveToRepository",     job.isRepoSaveToRepository());
+        repo.put("overwriteFiles",       job.isRepoOverwriteFiles());
+        repo.put("sequentialFilenames",  job.isRepoSequentialFilenames());
+        repo.put("usingDefaultReportOutputFolderURI", false);
         body.put("repositoryDestination", repo);
 
         // mailNotification
         Map<String, Object> mail = new LinkedHashMap<>();
+        mail.put("version",     0);
         mail.put("subject",     job.getSubject());
         mail.put("messageText", job.getMessageText());
         mail.put("resultSendType",               job.getResultSendType());
@@ -171,9 +190,10 @@ public class JasperApiService {
         mail.put("skipNotificationWhenJobFails", job.isSkipNotifOnFail());
         mail.put("includingStackTraceWhenJobFails", job.isIncludeStacktraceOnFail());
 
-        if (!to.isEmpty())  mail.put("toAddresses",  Collections.singletonMap("address", to));
-        if (!cc.isEmpty())  mail.put("ccAddresses",  Collections.singletonMap("address", cc));
-        if (!bcc.isEmpty()) mail.put("bccAddresses", Collections.singletonMap("address", bcc));
+        // 검증된 요청과 동일하게, 비어있어도 키 자체는 항상 포함 (예: "bccAddresses": {"address": []})
+        mail.put("toAddresses",  Collections.singletonMap("address", to));
+        mail.put("ccAddresses",  Collections.singletonMap("address", cc));
+        mail.put("bccAddresses", Collections.singletonMap("address", bcc));
 
         body.put("mailNotification", mail);
         return body;
@@ -208,27 +228,23 @@ public class JasperApiService {
     }
 
     // ── Trigger 조립 ───────────────────────────────────────────
-    private Map<String, Object> buildTrigger(ScheduleJobDto job) {
+    // 로컬 DB의 트리거 타입(SIMPLE/CALENDAR)이 무엇이든, Jasper에는 항상
+    // "지금 1회만 즉시 실행"하는 동일한 단발성 simpleTrigger만 보낸다.
+    // 실제 반복 스케줄링은 ScheduleRunner가 자바 코드로 직접 판단해서
+    // executeJob()을 그때그때 호출하는 방식으로 처리하기 때문에,
+    // Jasper 쪽에 별도의 반복 주기를 등록할 필요가 없다 (중복 발송 방지).
+    private Map<String, Object> buildImmediateTrigger(ScheduleJobDto job) {
+        Map<String, Object> simple = new LinkedHashMap<>();
+        simple.put("version",                0);
+        simple.put("timezone",               job.getTimezone());
+        simple.put("startType",              1);   // 1 = 즉시(NOW)
+        simple.put("occurrenceCount",        1);   // 1회만 실행 (Jasper가 스스로 반복하지 않음)
+        simple.put("recurrenceInterval",     1);   // occurrenceCount=1이라 실제로는 사용되지 않음
+        simple.put("recurrenceIntervalUnit", "DAY");
+        simple.put("misfireInstruction",     0);
+
         Map<String, Object> trigger = new LinkedHashMap<>();
-        if ("CALENDAR".equals(job.getTriggerType())) {
-            Map<String, Object> cal = new LinkedHashMap<>();
-            cal.put("timezone",         job.getTimezone());
-            cal.put("startType",        job.getStartType());
-            cal.put("misfireInstruction", job.getMisfireInstruction());
-            if (job.getStartDate() != null) cal.put("startDate", job.getStartDate());
-            if (job.getEndDate()   != null) cal.put("endDate",   job.getEndDate());
-            cal.put("cronExpression", job.getCronExpression());
-            trigger.put("calendarTrigger", cal);
-        } else {
-            Map<String, Object> simple = new LinkedHashMap<>();
-            simple.put("timezone",                job.getTimezone());
-            simple.put("startType",               job.getStartType());
-            simple.put("occurrenceCount",         job.getOccurrenceCount());
-            simple.put("recurrenceInterval",      job.getRecurrenceInterval());
-            simple.put("recurrenceIntervalUnit",  job.getRecurrenceIntervalUnit());
-            simple.put("misfireInstruction",      job.getMisfireInstruction());
-            trigger.put("simpleTrigger", simple);
-        }
+        trigger.put("simpleTrigger", simple);
         return trigger;
     }
 
@@ -238,10 +254,11 @@ public class JasperApiService {
         String encoded = Base64.getEncoder()
             .encodeToString(creds.getBytes(StandardCharsets.UTF_8));
         headers.set("Authorization", "Basic " + encoded);
+        headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
         return headers;
     }
 
-    private void saveMailSendLogs(Long execId, List<String> emails,
+    private void saveMailSendLogs(Long execId, Collection<String> emails,
                                    String type, String userType) {
         for (String email : emails) {
             executionLogMapper.insertMailSendLog(execId, email, type, userType, "SENT", null);

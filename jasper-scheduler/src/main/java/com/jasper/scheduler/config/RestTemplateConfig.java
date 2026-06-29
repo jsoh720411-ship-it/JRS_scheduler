@@ -18,6 +18,10 @@ public class RestTemplateConfig {
     @Value("${jasper.server.password}")
     private String jasperPassword;
 
+    // Job API의 outputLocale 필드 기본값. 필요 시 application.yml에서 jasper.output-locale로 override
+    @Value("${jasper.output-locale:en_GB}")
+    private String outputLocale;
+
     @Bean
     public RestTemplate restTemplate() {
         HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory();
@@ -29,4 +33,5 @@ public class RestTemplateConfig {
     public String getJasperUrl()      { return jasperUrl; }
     public String getJasperUsername() { return jasperUsername; }
     public String getJasperPassword() { return jasperPassword; }
+    public String getOutputLocale()   { return outputLocale; }
 }

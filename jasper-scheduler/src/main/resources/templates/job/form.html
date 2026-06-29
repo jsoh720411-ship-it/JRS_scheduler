@@ -86,11 +86,13 @@
                     </div>
                     <div class="form-group">
                         <label>시작일</label>
-                        <input type="datetime-local" id="f-start-date" th:value="${job.startDate}"/>
+                        <input type="datetime-local" id="f-start-date"
+                               th:value="${job.startDate != null} ? ${#temporals.format(job.startDate,'yyyy-MM-dd''T''HH:mm')} : ''"/>
                     </div>
                     <div class="form-group">
                         <label>종료일</label>
-                        <input type="datetime-local" id="f-end-date" th:value="${job.endDate}"/>
+                        <input type="datetime-local" id="f-end-date"
+                               th:value="${job.endDate != null} ? ${#temporals.format(job.endDate,'yyyy-MM-dd''T''HH:mm')} : ''"/>
                     </div>
                     <!-- CALENDAR -->
                     <div class="form-group full" id="wrap-cron">
@@ -345,6 +347,11 @@ function collectRParams() {
     });
 }
 
+function toSqlDateTime(value) {
+    if (!value) return null;                  // 빈 문자열 → null (SQL Server에 안전)
+    return value.replace('T', ' ') + ':00';    // "2026-07-01T08:00" → "2026-07-01 08:00:00"
+}
+
 function saveJob() {
     const jobId = document.getElementById('f-job-id').value;
     const notifId = document.getElementById('f-notification-id').value;
@@ -360,8 +367,8 @@ function saveJob() {
         triggerType:         trigType,
         timezone:            document.getElementById('f-timezone').value,
         startType:           parseInt(document.getElementById('f-start-type').value),
-        startDate:           document.getElementById('f-start-date').value || null,
-        endDate:             document.getElementById('f-end-date').value   || null,
+        startDate:           toSqlDateTime(document.getElementById('f-start-date').value),
+        endDate:             toSqlDateTime(document.getElementById('f-end-date').value),
         cronExpression:      trigType==='CALENDAR' ? document.getElementById('f-cron').value : null,
         recurrenceInterval:  trigType==='SIMPLE' ? parseInt(document.getElementById('f-interval').value) : null,
         recurrenceIntervalUnit: trigType==='SIMPLE' ? document.getElementById('f-unit').value : null,

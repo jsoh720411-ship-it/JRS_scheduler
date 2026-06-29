@@ -41,6 +41,7 @@
     <select id="findAll" resultMap="jobResultMap">
         SELECT sj.*, r.report_name,
                jt.trigger_type, jt.timezone, jt.start_type, jt.cron_expression,
+               jt.start_date, jt.end_date, jt.misfire_instruction,
                jt.occurrence_count, jt.recurrence_interval, jt.recurrence_interval_unit,
                jmn.notification_id, jmn.subject, jmn.message_text,
                jmn.result_send_type, jmn.skip_empty_reports,
@@ -55,6 +56,7 @@
     <select id="findByStatus" resultMap="jobResultMap">
         SELECT sj.*, r.report_name,
                jt.trigger_type, jt.timezone, jt.start_type, jt.cron_expression,
+               jt.start_date, jt.end_date, jt.misfire_instruction,
                jt.occurrence_count, jt.recurrence_interval, jt.recurrence_interval_unit,
                jmn.notification_id, jmn.subject, jmn.message_text,
                jmn.result_send_type, jmn.skip_empty_reports,
@@ -129,7 +131,8 @@
              misfire_instruction, occurrence_count, recurrence_interval,
              recurrence_interval_unit, cron_expression)
         VALUES
-            (#{jobId}, #{triggerType}, #{timezone}, #{startType}, #{startDate}, #{endDate},
+            (#{jobId}, #{triggerType}, #{timezone}, #{startType},
+             #{startDate, jdbcType=TIMESTAMP}, #{endDate, jdbcType=TIMESTAMP},
              #{misfireInstruction}, #{occurrenceCount}, #{recurrenceInterval},
              #{recurrenceIntervalUnit}, #{cronExpression})
     </insert>
@@ -137,7 +140,9 @@
     <update id="updateTrigger">
         UPDATE dbo.JOB_TRIGGER
         SET trigger_type = #{triggerType}, timezone = #{timezone},
-            start_type = #{startType}, start_date = #{startDate}, end_date = #{endDate},
+            start_type = #{startType},
+            start_date = #{startDate, jdbcType=TIMESTAMP},
+            end_date   = #{endDate, jdbcType=TIMESTAMP},
             misfire_instruction = #{misfireInstruction},
             occurrence_count = #{occurrenceCount},
             recurrence_interval = #{recurrenceInterval},
