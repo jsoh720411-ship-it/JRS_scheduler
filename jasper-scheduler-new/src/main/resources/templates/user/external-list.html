@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="layout/layout :: head('External User')"></head>
+<body class="app-body">
+<aside th:replace="layout/layout :: sidebar('external')"></aside>
+<div class="main-wrap">
+    <header th:replace="layout/layout :: topnav"></header>
+    <main class="main">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">External User</h1>
+                <p class="page-sub">외부 이메일 수신자 관리</p>
+            </div>
+            <button class="btn btn-primary" onclick="openCreate()">
+                <i class="ti ti-plus"></i>사용자 추가
+            </button>
+        </div>
+
+        <div class="filter-bar">
+            <input type="text" id="kw-company"     placeholder="Company 코드" style="width:140px"/>
+            <input type="text" id="kw-partner"     placeholder="Partner 코드" style="width:140px"/>
+            <input type="text" id="kw-keyword"     placeholder="이메일 검색"  style="width:200px"/>
+            <button class="btn" onclick="loadList()"><i class="ti ti-search"></i>검색</button>
+            <button class="btn" onclick="clearFilter()"><i class="ti ti-x"></i>초기화</button>
+        </div>
+
+        <div class="card">
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>이메일 (contact)</th>
+                        <th>Company</th>
+                        <th>Partner Code</th>
+                        <th>Role</th>
+                        <th>상태</th>
+                        <th>등록일</th>
+                        <th style="text-align:center">관리</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr th:each="u : ${users}" class="data-row">
+                        <td class="fw-500" th:text="${u.contactEmail}">-</td>
+                        <td th:text="${u.company}">-</td>
+                        <td th:text="${u.partnerCode}">-</td>
+                        <td><span class="badge badge-gray" th:text="${u.role}">-</span></td>
+                        <td>
+                            <span th:if="${u.active}"    class="badge badge-active">활성</span>
+                            <span th:unless="${u.active}" class="badge badge-disabled">비활성</span>
+                        </td>
+                        <td class="text-sm text-secondary"
+                            th:text="${#temporals.format(u.createdAt,'yyyy-MM-dd')}">-</td>
+                        <td style="text-align:center">
+                            <button class="btn-sm" th:attr="onclick='openEdit(\''+${u.contactEmail}+'\')'">
+                                <i class="ti ti-edit"></i>수정
+                            </button>
+                            <button class="btn-sm btn-danger" th:attr="onclick='deleteUser(\''+${u.contactEmail}+'\')'">
+                                <i class="ti ti-trash"></i>삭제
+                            </button>
+                        </td>
+                    </tr>
+                    <tr th:if="${#lists.isEmpty(users)}">
+                        <td colspan="7" class="empty-row">등록된 사용자가 없습니다.</td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+</div>
+
+<div id="modal-overlay" class="modal-overlay" style="display:none" onclick="closeModal(event)">
+    <div class="modal">
+        <div class="modal-head">
+            <span id="modal-title">사용자 추가</span>
+            <button class="modal-close" onclick="closeModalDirect()"><i class="ti ti-x"></i></button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="f-email-orig"/>
+            <div class="form-grid">
+                <div class="form-group full">
+                    <label>이메일 (contact) <span class="req">*</span></label>
+                    <input type="email" id="f-email" placeholder="partner@company.com"/>
+                </div>
+                <div class="form-group">
+                    <label>Company <span class="req">*</span></label>
+                    <input type="text" id="f-company" placeholder="KR"/>
+                </div>
+                <div class="form-group">
+                    <label>Partner Code <span class="req">*</span></label>
+                    <input type="text" id="f-partner" placeholder="PARTNER001"/>
+                </div>
+                <div class="form-group">
+                    <label>Role <span class="req">*</span></label>
+                    <input type="text" id="f-role" placeholder="PARTNER_MGR"/>
+                </div>
+                <div class="form-group">
+                    <label>상태</label>
+                    <select id="f-active">
+                        <option value="true">활성</option>
+                        <option value="false">비활성</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModalDirect()">취소</button>
+            <button class="btn btn-primary" onclick="saveUser()"><i class="ti ti-check"></i>저장</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg"></span></div>
+<script th:src="@{/js/main.js}"></script>
+<script>
+let editMode = false;
+
+function openCreate() {
+    editMode = false;
+    document.getElementById('modal-title').textContent = '사용자 추가';
+    ['f-email','f-company','f-partner','f-role'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('f-email').disabled = false;
+    document.getElementById('f-active').value = 'true';
+    document.getElementById('modal-overlay').style.display = 'flex';
+}
+
+function openEdit(email) {
+    editMode = true;
+    fetch('/users/external/' + encodeURIComponent(email))
+        .then(r => r.json()).then(u => {
+            document.getElementById('modal-title').textContent = '사용자 수정';
+            document.getElementById('f-email-orig').value = u.contactEmail;
+            document.getElementById('f-email').value = u.contactEmail;
+            document.getElementById('f-email').disabled = true;
+            document.getElementById('f-company').value = u.company;
+            document.getElementById('f-partner').value = u.partnerCode;
+            document.getElementById('f-role').value = u.role;
+            document.getElementById('f-active').value = String(u.active);
+            document.getElementById('modal-overlay').style.display = 'flex';
+        });
+}
+
+function saveUser() {
+    const email = document.getElementById('f-email-orig').value || document.getElementById('f-email').value;
+    const data = {
+        contactEmail: document.getElementById('f-email').value,
+        company:      document.getElementById('f-company').value,
+        partnerCode:  document.getElementById('f-partner').value,
+        role:         document.getElementById('f-role').value,
+        active:     document.getElementById('f-active').value === 'true'
+    };
+    const url    = editMode ? '/users/external/' + encodeURIComponent(email) : '/users/external';
+    const method = editMode ? 'PUT' : 'POST';
+    apiFetch(url, method, data).then(r => {
+        if (r.success) { showToast(r.message); closeModalDirect(); setTimeout(()=>location.reload(),800); }
+        else alert(r.message);
+    });
+}
+
+function deleteUser(email) {
+    if (!confirm(email + ' 을 삭제하시겠습니까?')) return;
+    apiFetch('/users/external/' + encodeURIComponent(email), 'DELETE').then(r => {
+        if (r.success) { showToast(r.message); setTimeout(()=>location.reload(),800); }
+        else alert(r.message);
+    });
+}
+
+function loadList() {
+    const p = new URLSearchParams();
+    const c  = document.getElementById('kw-company').value;
+    const pt = document.getElementById('kw-partner').value;
+    const kw = document.getElementById('kw-keyword').value;
+    if (c)  p.set('company', c);
+    if (pt) p.set('partnerCode', pt);
+    if (kw) p.set('keyword', kw);
+    location.href = '/users/external?' + p.toString();
+}
+
+function clearFilter() { location.href = '/users/external'; }
+</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>로그인 | Report Scheduler</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.5.0/dist/tabler-icons.min.css"/>
+    <link rel="stylesheet" th:href="@{/css/main.css}"/>
+</head>
+<body>
+<div class="login-wrap">
+    <div class="login-card">
+        <div class="login-brand">
+            <div class="login-brand-icon"><i class="ti ti-calendar-stats"></i></div>
+            <div>
+                <div class="login-brand-name">Report Scheduler</div>
+                <div class="login-brand-sub">관리자 포털</div>
+            </div>
+        </div>
+
+        <div th:if="${param.error}" class="login-err show">
+            <i class="ti ti-alert-circle"></i>ID 또는 비밀번호가 올바르지 않습니다.
+        </div>
+        <div th:if="${param.logout}" class="login-err show" style="color:var(--c-success);background:var(--c-success-bg);border-color:#86efac">
+            <i class="ti ti-check"></i>로그아웃되었습니다.
+        </div>
+
+        <form th:action="@{/login}" method="post">
+            <div class="login-field">
+                <label for="username">관리자 ID</label>
+                <input type="text" id="username" name="username" placeholder="admin" autocomplete="username" required/>
+            </div>
+            <div class="login-field">
+                <label for="password">비밀번호</label>
+                <input type="password" id="password" name="password" placeholder="••••••••" autocomplete="current-password" required/>
+            </div>
+            <button type="submit" class="btn-login">로그인</button>
+        </form>
+    </div>
+</div>
+</body>
+</html>

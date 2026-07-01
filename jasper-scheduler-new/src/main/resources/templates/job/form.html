@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="layout/layout :: head('Job 등록')"></head>
+<body class="app-body">
+<aside th:replace="layout/layout :: sidebar('jobs')"></aside>
+<div class="main-wrap">
+    <header th:replace="layout/layout :: topnav"></header>
+    <main class="main">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title" th:text="${mode=='create'} ? 'Job 추가' : (${mode=='copy'} ? 'Job 복사' : 'Job 수정')">Job 추가</h1>
+                <p class="page-sub">Schedule Job 상세 설정</p>
+            </div>
+            <a th:href="@{/jobs}" class="btn"><i class="ti ti-arrow-left"></i>목록으로</a>
+        </div>
+
+        <input type="hidden" id="f-job-id"           th:value="${job.jobId}"/>
+        <input type="hidden" id="f-notification-id"  th:value="${job.notificationId}"/>
+
+        <!-- 복사 모드 안내 배너 -->
+        <div th:if="${mode=='copy'}" class="alert-banner">
+            <i class="ti ti-copy"></i>
+            <strong>Job 복사 모드</strong> — 원본 Job의 설정이 그대로 불러와졌습니다.
+            <b>Trigger(발송 시각)</b>와 <b>수신자</b>를 변경한 뒤 저장하세요.
+            저장하면 새로운 Job으로 등록됩니다.
+        </div>
+
+        <!-- ① 기본 정보 -->
+        <div class="card" style="margin-bottom:14px">
+            <div class="card-head"><span class="card-title"><i class="ti ti-info-circle"></i>기본 정보</span></div>
+            <div class="card-body">
+                <div class="form-grid">
+                    <div class="form-group full">
+                        <label>Job 이름 (label) <span class="req">*</span></label>
+                        <input type="text" id="f-label" th:value="${job.jobLabel}" placeholder="월간 매출 리포트 - 한국법인"/>
+                    </div>
+                    <div class="form-group full">
+                        <label>설명</label>
+                        <input type="text" id="f-desc" th:value="${job.jobDescription}" placeholder="매월 1일 자동 발송"/>
+                    </div>
+                    <div class="form-group">
+                        <label>레포트 <span class="req">*</span></label>
+                        <select id="f-report">
+                            <option value="">-- 선택 --</option>
+                            <option th:each="r : ${reports}"
+                                    th:value="${r.reportId}"
+                                    th:text="${r.reportName}"
+                                    th:selected="${r.reportId == job.reportId}"
+                                    th:attr="data-uri=${r.jasperReportUri}"></option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>상태</label>
+                        <select id="f-status">
+                            <option value="ACTIVE"   th:selected="${job.status=='ACTIVE'}">ACTIVE</option>
+                            <option value="PAUSED"   th:selected="${job.status=='PAUSED'}">PAUSED</option>
+                            <option value="DISABLED" th:selected="${job.status=='DISABLED'}">DISABLED</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>출력 형식 <span class="req">*</span></label>
+                        <input type="text" id="f-formats" th:value="${job.outputFormats}" placeholder="PDF,XLS"/>
+                    </div>
+                    <div class="form-group">
+                        <label>출력 파일명</label>
+                        <input type="text" id="f-filename" th:value="${job.baseOutputFilename}" placeholder="monthly_sales_KR"/>
+                    </div>
+                    <div class="form-group">
+                        <label>Timezone</label>
+                        <input type="text" id="f-timezone" th:value="${job.outputTimezone ?: 'Asia/Seoul'}" placeholder="Asia/Seoul"/>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ② Trigger -->
+        <div class="card" style="margin-bottom:14px">
+            <div class="card-head"><span class="card-title"><i class="ti ti-clock"></i>Trigger 설정</span></div>
+            <div class="card-body">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Trigger 유형</label>
+                        <select id="f-trigger-type" onchange="toggleTrigger()">
+                            <option value="CALENDAR" th:selected="${job.triggerType=='CALENDAR'}">CALENDAR (Cron)</option>
+                            <option value="SIMPLE"   th:selected="${job.triggerType=='SIMPLE'}">SIMPLE (반복 간격)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Start Type</label>
+                        <select id="f-start-type">
+                            <option value="1" th:selected="${job.startType==1}">즉시 시작</option>
+                            <option value="2" th:selected="${job.startType==2}">날짜 지정</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>시작일</label>
+                        <input type="datetime-local" id="f-start-date"
+                               th:value="${job.startDate != null} ? ${#temporals.format(job.startDate,'yyyy-MM-dd''T''HH:mm')} : ''"/>
+                    </div>
+                    <div class="form-group">
+                        <label>종료일</label>
+                        <input type="datetime-local" id="f-end-date"
+                               th:value="${job.endDate != null} ? ${#temporals.format(job.endDate,'yyyy-MM-dd''T''HH:mm')} : ''"/>
+                    </div>
+                    <!-- CALENDAR -->
+                    <div class="form-group full" id="wrap-cron">
+                        <label>Cron 표현식 <span class="req">*</span></label>
+                        <input type="text" id="f-cron" th:value="${job.cronExpression}" placeholder="0 0 8 1 * ?  (매월 1일 오전 8시)"/>
+                    </div>
+                    <!-- SIMPLE -->
+                    <div class="form-group" id="wrap-interval" style="display:none">
+                        <label>반복 간격</label>
+                        <input type="number" id="f-interval" th:value="${job.recurrenceInterval}" placeholder="1"/>
+                    </div>
+                    <div class="form-group" id="wrap-unit" style="display:none">
+                        <label>간격 단위</label>
+                        <select id="f-unit">
+                            <option value="MINUTE" th:selected="${job.recurrenceIntervalUnit=='MINUTE'}">MINUTE</option>
+                            <option value="HOUR"   th:selected="${job.recurrenceIntervalUnit=='HOUR'}">HOUR</option>
+                            <option value="DAY"    th:selected="${job.recurrenceIntervalUnit=='DAY'}">DAY</option>
+                            <option value="WEEK"   th:selected="${job.recurrenceIntervalUnit=='WEEK'}">WEEK</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="wrap-count" style="display:none">
+                        <label>실행 횟수 (-1=무제한)</label>
+                        <input type="number" id="f-count" th:value="${job.occurrenceCount ?: -1}"/>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ③ 메일 설정 -->
+        <div class="card" style="margin-bottom:14px">
+            <div class="card-head"><span class="card-title"><i class="ti ti-mail"></i>메일 알림 설정</span></div>
+            <div class="card-body">
+                <div class="form-grid">
+                    <div class="form-group full">
+                        <label>제목 <span class="req">*</span></label>
+                        <input type="text" id="f-subject" th:value="${job.subject}" placeholder="월간 매출 리포트 - 6월"/>
+                    </div>
+                    <div class="form-group full">
+                        <label>본문</label>
+                        <textarea id="f-message" rows="3" th:text="${job.messageText}" placeholder="안녕하세요. 레포트를 첨부합니다."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>전송 방식</label>
+                        <select id="f-send-type">
+                            <option value="SEND_ATTACHMENT"  th:selected="${job.resultSendType=='SEND_ATTACHMENT'}">첨부파일</option>
+                            <option value="SEND_INLINE_EMBED" th:selected="${job.resultSendType=='SEND_INLINE_EMBED'}">본문 삽입</option>
+                            <option value="DONT_SEND"        th:selected="${job.resultSendType=='DONT_SEND'}">발송 안함</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="justify-content:flex-end;flex-direction:row;align-items:center;gap:16px">
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                            <input type="checkbox" id="f-skip-empty" th:checked="${job.skipEmptyReports}"/> 빈 레포트 스킵
+                        </label>
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                            <input type="checkbox" id="f-skip-fail" th:checked="${job.skipNotifOnFail}"/> 실패 시 알림 생략
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ④ 내부 수신자 -->
+        <div class="card" style="margin-bottom:14px">
+            <div class="card-head">
+                <span class="card-title"><i class="ti ti-users"></i>내부 수신자 (Internal)</span>
+                <button class="btn-sm" onclick="addInternal()"><i class="ti ti-plus"></i>추가</button>
+            </div>
+            <div class="card-body" style="padding:0">
+                <table class="recipient-table">
+                    <thead><tr><th>Mode</th><th>Role / Company</th><th>수신 유형</th><th></th></tr></thead>
+                    <tbody id="internal-tbody">
+                    <tr th:each="r,i : ${job.internalRecipients}" th:attr="data-idx=${i.index}">
+                        <td>
+                            <select th:id="'im-'+${i.index}" onchange="toggleInternalMode(this)">
+                                <option value="BY_ROLE"    th:selected="${r.recipientMode=='BY_ROLE'}">BY_ROLE</option>
+                                <option value="BY_COMPANY" th:selected="${r.recipientMode=='BY_COMPANY'}">BY_COMPANY</option>
+                            </select>
+                        </td>
+                        <td><input type="text" th:id="'iv-'+${i.index}" th:value="${r.role ?: r.company}" placeholder="BM 또는 KR" style="width:160px"/></td>
+                        <td>
+                            <select th:id="'it-'+${i.index}" style="width:80px">
+                                <option value="TO " th:selected="${r.recipientType?.trim()=='TO'}">TO</option>
+                                <option value="CC " th:selected="${r.recipientType?.trim()=='CC'}">CC</option>
+                                <option value="BCC" th:selected="${r.recipientType?.trim()=='BCC'}">BCC</option>
+                            </select>
+                        </td>
+                        <td><button class="btn-del" onclick="removeRow(this)"><i class="ti ti-x"></i></button></td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ⑤ 외부 수신자 -->
+        <div class="card" style="margin-bottom:14px">
+            <div class="card-head">
+                <span class="card-title"><i class="ti ti-building-community"></i>외부 수신자 (External)</span>
+                <button class="btn-sm" onclick="addExternal()"><i class="ti ti-plus"></i>추가</button>
+            </div>
+            <div class="card-body" style="padding:0">
+                <table class="recipient-table">
+                    <thead>
+                        <tr>
+                            <th>Mode</th>
+                            <th>파트너 코드 / 이메일</th>
+                            <th>수신 유형</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="external-tbody">
+                    <tr th:each="r,i : ${job.externalRecipients}" th:attr="data-idx=${i.index}">
+                        <td>
+                            <select th:id="'em-'+${i.index}" onchange="toggleExternalMode(this)" style="width:150px">
+                                <option value="BY_PARTNER_CODE" th:selected="${r.recipientMode=='BY_PARTNER_CODE'}">BY_PARTNER_CODE</option>
+                                <option value="DIRECT"          th:selected="${r.recipientMode=='DIRECT' or r.recipientMode==null}">DIRECT (이메일)</option>
+                            </select>
+                        </td>
+                        <td>
+                            <!-- BY_PARTNER_CODE: 파트너 코드 입력 -->
+                            <input type="text"
+                                   th:id="'ep-'+${i.index}"
+                                   th:value="${r.partnerCode}"
+                                   placeholder="파트너 코드 (예: PARTNER_A)"
+                                   style="width:220px"
+                                   th:style="${r.recipientMode=='DIRECT' or r.recipientMode==null} ? 'display:none;width:220px' : 'width:220px'"/>
+                            <!-- DIRECT: 이메일 드롭다운 -->
+                            <select th:id="'ee-'+${i.index}"
+                                    th:style="${r.recipientMode=='DIRECT' or r.recipientMode==null} ? 'width:280px' : 'display:none;width:280px'">
+                                <option th:each="u : ${externalUsers}"
+                                        th:value="${u.contactEmail}"
+                                        th:text="${u.contactEmail + ' (' + u.company + '/' + u.partnerCode + ')'}"
+                                        th:selected="${u.contactEmail == r.contactEmail}"></option>
+                            </select>
+                        </td>
+                        <td>
+                            <select th:id="'et-'+${i.index}" style="width:80px">
+                                <option value="TO " th:selected="${r.recipientType?.trim()=='TO'}">TO</option>
+                                <option value="CC " th:selected="${r.recipientType?.trim()=='CC'}">CC</option>
+                                <option value="BCC" th:selected="${r.recipientType?.trim()=='BCC'}">BCC</option>
+                            </select>
+                        </td>
+                        <td><button class="btn-del" onclick="removeRow(this)"><i class="ti ti-x"></i></button></td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ⑥ 레포트 파라미터 -->
+        <div class="card" style="margin-bottom:14px" id="param-section">
+            <div class="card-head"><span class="card-title"><i class="ti ti-variable"></i>레포트 파라미터</span></div>
+            <div class="card-body" style="padding:0">
+                <table class="recipient-table">
+                    <thead><tr><th>파라미터명</th><th>값</th><th>동적 계산</th><th>동적 표현식</th></tr></thead>
+                    <tbody id="rparam-tbody">
+                    <tr th:each="p,i : ${job.reportParams}" th:attr="data-idx=${i.index}">
+                        <td class="text-sm fw-500" th:text="${p.paramName}">-</td>
+                        <td><input type="text" th:id="'pv-'+${i.index}" th:value="${p.paramValue}" style="width:140px" th:disabled="${p.dynamic}"/></td>
+                        <td style="text-align:center">
+                            <input type="checkbox" th:id="'pd-'+${i.index}" th:checked="${p.dynamic}"
+                                   th:attr="data-idx=${i.index}" onchange="toggleDynamic(this)"/>
+                        </td>
+                        <td><input type="text" th:id="'pe-'+${i.index}" th:value="${p.dynamicExpr}"
+                                   placeholder="TODAY-1D / MONTH_START / PREV_MONTH_END"
+                                   style="width:220px" th:disabled="${!p.dynamic}"/></td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <button class="btn btn-primary" onclick="saveJob()"><i class="ti ti-check"></i>저장</button>
+            <a th:href="@{/jobs}" class="btn">취소</a>
+        </div>
+    </main>
+</div>
+
+<div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg"></span></div>
+<script th:src="@{/js/main.js}"></script>
+<script th:inline="javascript">
+const MODE = /*[[${mode}]]*/ 'create';
+const EXTERNAL_USERS = /*[[${externalUsers}]]*/ [];
+let iIdx = /*[[${#lists.size(job.internalRecipients ?: {})}]]*/ 0;
+let eIdx = /*[[${#lists.size(job.externalRecipients ?: {})}]]*/ 0;
+
+function toggleTrigger() {
+    const t = document.getElementById('f-trigger-type').value;
+    document.getElementById('wrap-cron').style.display     = t==='CALENDAR' ? '' : 'none';
+    document.getElementById('wrap-interval').style.display = t==='SIMPLE'   ? '' : 'none';
+    document.getElementById('wrap-unit').style.display     = t==='SIMPLE'   ? '' : 'none';
+    document.getElementById('wrap-count').style.display    = t==='SIMPLE'   ? '' : 'none';
+}
+toggleTrigger();
+
+function addInternal() {
+    const idx = iIdx++;
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-idx', idx);
+    tr.innerHTML = `
+        <td><select id="im-${idx}" onchange="toggleInternalMode(this)">
+            <option value="BY_ROLE">BY_ROLE</option>
+            <option value="BY_COMPANY">BY_COMPANY</option>
+        </select></td>
+        <td><input type="text" id="iv-${idx}" placeholder="BM 또는 KR" style="width:160px"/></td>
+        <td><select id="it-${idx}" style="width:80px">
+            <option value="TO ">TO</option>
+            <option value="CC ">CC</option>
+            <option value="BCC">BCC</option>
+        </select></td>
+        <td><button class="btn-del" onclick="removeRow(this)"><i class="ti ti-x"></i></button></td>`;
+    document.getElementById('internal-tbody').appendChild(tr);
+}
+
+function toggleExternalMode(sel) {
+    const idx = sel.closest('tr').getAttribute('data-idx');
+    const isByPartner = sel.value === 'BY_PARTNER_CODE';
+    document.getElementById('ep-' + idx).style.display = isByPartner ? '' : 'none';
+    document.getElementById('ee-' + idx).style.display = isByPartner ? 'none' : '';
+}
+
+function addExternal() {
+    const idx = eIdx++;
+    const opts = EXTERNAL_USERS.map(u =>
+        `<option value="${u.contactEmail}">${u.contactEmail} (${u.company}/${u.partnerCode})</option>`
+    ).join('');
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-idx', idx);
+    tr.innerHTML = `
+        <td>
+            <select id="em-${idx}" onchange="toggleExternalMode(this)" style="width:150px">
+                <option value="BY_PARTNER_CODE" selected>BY_PARTNER_CODE</option>
+                <option value="DIRECT">DIRECT (이메일)</option>
+            </select>
+        </td>
+        <td>
+            <input type="text" id="ep-${idx}" placeholder="파트너 코드 (예: PARTNER_A)" style="width:220px"/>
+            <select id="ee-${idx}" style="display:none;width:280px">${opts}</select>
+        </td>
+        <td><select id="et-${idx}" style="width:80px">
+            <option value="TO ">TO</option>
+            <option value="CC ">CC</option>
+            <option value="BCC">BCC</option>
+        </select></td>
+        <td><button class="btn-del" onclick="removeRow(this)"><i class="ti ti-x"></i></button></td>`;
+    document.getElementById('external-tbody').appendChild(tr);
+}
+
+function removeRow(btn) { btn.closest('tr').remove(); }
+
+function toggleDynamic(cb) {
+    const idx = cb.getAttribute('data-idx');
+    document.getElementById('pv-' + idx).disabled = cb.checked;
+    document.getElementById('pe-' + idx).disabled = !cb.checked;
+}
+
+function collectInternals() {
+    return Array.from(document.querySelectorAll('#internal-tbody tr')).map(tr => {
+        const idx = tr.getAttribute('data-idx');
+        const mode = document.getElementById('im-' + idx)?.value;
+        const val  = document.getElementById('iv-' + idx)?.value;
+        return {
+            recipientMode: mode,
+            role:    mode === 'BY_ROLE'    ? val : null,
+            company: mode === 'BY_COMPANY' ? val : null,
+            recipientType: document.getElementById('it-' + idx)?.value
+        };
+    });
+}
+
+function collectExternals() {
+    return Array.from(document.querySelectorAll('#external-tbody tr')).map(tr => {
+        const idx  = tr.getAttribute('data-idx');
+        const mode = document.getElementById('em-' + idx)?.value || 'BY_PARTNER_CODE';
+        return {
+            recipientMode: mode,
+            partnerCode:   mode === 'BY_PARTNER_CODE' ? document.getElementById('ep-' + idx)?.value : null,
+            contactEmail:  mode === 'DIRECT'          ? document.getElementById('ee-' + idx)?.value : null,
+            recipientType: document.getElementById('et-' + idx)?.value
+        };
+    });
+}
+
+function collectRParams() {
+    return Array.from(document.querySelectorAll('#rparam-tbody tr')).map(tr => {
+        const idx = tr.getAttribute('data-idx');
+        const dyn = document.getElementById('pd-' + idx)?.checked;
+        return {
+            paramValue:   document.getElementById('pv-' + idx)?.value,
+            dynamic:      dyn,
+            dynamicExpr:  document.getElementById('pe-' + idx)?.value
+        };
+    });
+}
+
+function toSqlDateTime(value) {
+    if (!value) return null;                  // 빈 문자열 → null (SQL Server에 안전)
+    return value.replace('T', ' ') + ':00';    // "2026-07-01T08:00" → "2026-07-01 08:00:00"
+}
+
+function saveJob() {
+    const jobId = document.getElementById('f-job-id').value;
+    const notifId = document.getElementById('f-notification-id').value;
+    const trigType = document.getElementById('f-trigger-type').value;
+    const data = {
+        reportId:            document.getElementById('f-report').value,
+        jobLabel:            document.getElementById('f-label').value,
+        jobDescription:      document.getElementById('f-desc').value,
+        outputFormats:       document.getElementById('f-formats').value,
+        baseOutputFilename:  document.getElementById('f-filename').value,
+        outputTimezone:      document.getElementById('f-timezone').value,
+        status:              document.getElementById('f-status').value,
+        triggerType:         trigType,
+        timezone:            document.getElementById('f-timezone').value,
+        startType:           parseInt(document.getElementById('f-start-type').value),
+        startDate:           toSqlDateTime(document.getElementById('f-start-date').value),
+        endDate:             toSqlDateTime(document.getElementById('f-end-date').value),
+        cronExpression:      trigType==='CALENDAR' ? document.getElementById('f-cron').value : null,
+        recurrenceInterval:  trigType==='SIMPLE' ? parseInt(document.getElementById('f-interval').value) : null,
+        recurrenceIntervalUnit: trigType==='SIMPLE' ? document.getElementById('f-unit').value : null,
+        occurrenceCount:     trigType==='SIMPLE' ? parseInt(document.getElementById('f-count').value) : null,
+        notificationId:      notifId || null,
+        subject:             document.getElementById('f-subject').value,
+        messageText:         document.getElementById('f-message').value,
+        resultSendType:      document.getElementById('f-send-type').value,
+        skipEmptyReports:    document.getElementById('f-skip-empty').checked,
+        skipNotifOnFail:     document.getElementById('f-skip-fail').checked,
+        includeStacktraceOnFail: false,
+        internalRecipients:  collectInternals(),
+        externalRecipients:  collectExternals(),
+        reportParams:        collectRParams()
+    };
+    const url    = (MODE==='edit') ? '/jobs/' + jobId : '/jobs';
+    const method = (MODE==='edit') ? 'PUT' : 'POST';  // create, copy 모두 POST → 새 Job 등록
+    apiFetch(url, method, data).then(r => {
+        if (r.success) { showToast('저장되었습니다.'); setTimeout(()=>location.href='/jobs', 900); }
+        else alert(r.message);
+    });
+}
+</script>
+</body>
+</html>

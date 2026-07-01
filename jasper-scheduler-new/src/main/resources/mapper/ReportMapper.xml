@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jasper.scheduler.mapper.ReportMapper">
+
+    <select id="findAll" resultType="com.jasper.scheduler.dto.ReportDto">
+        SELECT report_id, report_name, jasper_report_uri, description, is_active AS active
+        FROM dbo.REPORT ORDER BY report_name
+    </select>
+
+    <select id="findById" resultType="com.jasper.scheduler.dto.ReportDto">
+        SELECT report_id, report_name, jasper_report_uri, description, is_active AS active
+        FROM dbo.REPORT WHERE report_id = #{reportId}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="reportId">
+        INSERT INTO dbo.REPORT (report_name, jasper_report_uri, description, is_active)
+        VALUES (#{reportName}, #{jasperReportUri}, #{description}, #{active})
+    </insert>
+
+    <update id="update">
+        UPDATE dbo.REPORT
+        SET report_name = #{reportName}, jasper_report_uri = #{jasperReportUri},
+            description = #{description}, is_active = #{active},
+            updated_at = SYSDATETIME()
+        WHERE report_id = #{reportId}
+    </update>
+
+    <delete id="delete">
+        DELETE FROM dbo.REPORT WHERE report_id = #{reportId}
+    </delete>
+
+    <select id="findParams" resultType="com.jasper.scheduler.dto.ParamDefDto">
+        SELECT param_def_id, report_id, param_name, param_type,
+               is_required AS required, default_value, display_order
+        FROM dbo.REPORT_PARAM_DEF WHERE report_id = #{reportId}
+        ORDER BY display_order
+    </select>
+
+    <insert id="insertParam" useGeneratedKeys="true" keyProperty="paramDefId">
+        INSERT INTO dbo.REPORT_PARAM_DEF
+            (report_id, param_name, param_type, is_required, default_value, display_order)
+        VALUES
+            (#{reportId}, #{paramName}, #{paramType}, #{required}, #{defaultValue}, #{displayOrder})
+    </insert>
+
+    <delete id="deleteParam">
+        DELETE FROM dbo.REPORT_PARAM_DEF WHERE param_def_id = #{paramDefId}
+    </delete>
+
+    <delete id="deleteParamsByReportId">
+        DELETE FROM dbo.REPORT_PARAM_DEF WHERE report_id = #{reportId}
+    </delete>
+
+</mapper>

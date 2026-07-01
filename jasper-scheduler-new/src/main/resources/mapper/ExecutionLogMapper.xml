@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jasper.scheduler.mapper.ExecutionLogMapper">
+
+    <insert id="insertExecution" useGeneratedKeys="true" keyProperty="executionId">
+        INSERT INTO dbo.JOB_EXECUTION_LOG
+            (job_id, jasper_fire_time, execution_status, output_file_uri, error_message, triggered_by)
+        VALUES
+            (#{jobId}, #{jasperFireTime}, #{executionStatus}, #{outputFileUri}, #{errorMessage}, #{triggeredBy})
+    </insert>
+
+    <update id="updateExecution">
+        UPDATE dbo.JOB_EXECUTION_LOG
+        SET execution_status = #{executionStatus},
+            error_message    = #{errorMessage},
+            output_file_uri  = #{outputFileUri}
+        WHERE execution_id = #{executionId}
+    </update>
+
+    <select id="findById" resultType="com.jasper.scheduler.dto.ExecutionSummaryDto">
+        SELECT el.execution_id, el.job_id, sj.job_label,
+               r.report_name, el.jasper_fire_time, el.execution_status,
+               el.triggered_by, el.error_message,
+               (SELECT COUNT(*) FROM dbo.MAIL_SEND_LOG ml
+                WHERE ml.execution_id = el.execution_id AND ml.send_status = 'SENT') AS sent_count
+        FROM dbo.JOB_EXECUTION_LOG el
+        JOIN dbo.SCHEDULE_JOB sj ON el.job_id = sj.job_id
+        JOIN dbo.REPORT r ON sj.report_id = r.report_id
+        WHERE el.execution_id = #{executionId}
+    </select>
+
+    <select id="findRecentExecutions" resultType="com.jasper.scheduler.dto.ExecutionSummaryDto">
+        SELECT TOP (#{limit})
+               el.execution_id, el.job_id, sj.job_label,
+               r.report_name, el.jasper_fire_time, el.execution_status,
+               el.triggered_by, el.error_message,
+               (SELECT COUNT(*) FROM dbo.MAIL_SEND_LOG ml
+                WHERE ml.execution_id = el.execution_id AND ml.send_status = 'SENT') AS sent_count
+        FROM dbo.JOB_EXECUTION_LOG el
+        JOIN dbo.SCHEDULE_JOB sj ON el.job_id = sj.job_id
+        JOIN dbo.REPORT r ON sj.report_id = r.report_id
+        ORDER BY el.created_at DESC
+    </select>
+
+    <select id="findByFilter" resultType="com.jasper.scheduler.dto.ExecutionSummaryDto">
+        SELECT TOP (#{limit})
+               el.execution_id, el.job_id, sj.job_label,
+               r.report_name, el.jasper_fire_time, el.execution_status,
+               el.triggered_by, el.error_message,
+               (SELECT COUNT(*) FROM dbo.MAIL_SEND_LOG ml
+                WHERE ml.execution_id = el.execution_id AND ml.send_status = 'SENT') AS sent_count
+        FROM dbo.JOB_EXECUTION_LOG el
+        JOIN dbo.SCHEDULE_JOB sj ON el.job_id = sj.job_id
+        JOIN dbo.REPORT r ON sj.report_id = r.report_id
+        WHERE 1=1
+        <if test="status != null and status != ''">AND el.execution_status = #{status}</if>
+        <if test="jobId  != null">AND el.job_id = #{jobId}</if>
+        ORDER BY el.created_at DESC
+    </select>
+
+    <insert id="insertMailSendLog">
+        INSERT INTO dbo.MAIL_SEND_LOG
+            (execution_id, recipient_email, recipient_type, user_type, send_status, sent_at, error_message)
+        VALUES
+            (#{executionId}, #{email}, #{recipientType}, #{userType}, #{status}, SYSDATETIME(), #{error})
+    </insert>
+
+    <select id="countTodayByStatus" resultType="int">
+        SELECT COUNT(*) FROM dbo.JOB_EXECUTION_LOG
+        WHERE execution_status = #{status}
+          AND CAST(created_at AS DATE) = CAST(SYSDATETIME() AS DATE)
+    </select>
+
+    <select id="countPendingJobs" resultType="int">
+        SELECT COUNT(*) FROM dbo.SCHEDULE_JOB WHERE status = 'ACTIVE'
+    </select>
+
+    <select id="countTotalSentThisMonth" resultType="int">
+        SELECT COUNT(*) FROM dbo.MAIL_SEND_LOG
+        WHERE send_status = 'SENT'
+          AND YEAR(sent_at)  = YEAR(SYSDATETIME())
+          AND MONTH(sent_at) = MONTH(SYSDATETIME())
+    </select>
+
+    <select id="findDailyStats" resultType="com.jasper.scheduler.dto.DailyStatDto">
+        SELECT
+            CONVERT(VARCHAR(5), d.day_date, 10) AS day_label,
+            ISNULL(SUM(CASE WHEN el.execution_status = 'SUCCESS' THEN 1 ELSE 0 END), 0) AS success_count,
+            ISNULL(SUM(CASE WHEN el.execution_status = 'FAILED'  THEN 1 ELSE 0 END), 0) AS failed_count
+        FROM (
+            SELECT CAST(DATEADD(DAY, -n, CAST(SYSDATETIME() AS DATE)) AS DATE) AS day_date
+            FROM (VALUES(0),(1),(2),(3),(4),(5),(6)) AS t(n)
+        ) d
+        LEFT JOIN dbo.JOB_EXECUTION_LOG el
+               ON CAST(el.created_at AS DATE) = d.day_date
+        GROUP BY d.day_date
+        ORDER BY d.day_date
+    </select>
+
+    <select id="findUpcomingJobs" resultType="com.jasper.scheduler.dto.UpcomingJobDto">
+        SELECT TOP (#{limit})
+               sj.job_id, sj.job_label, sj.output_formats, sj.status,
+               jt.cron_expression AS next_fire_time
+        FROM dbo.SCHEDULE_JOB sj
+        LEFT JOIN dbo.JOB_TRIGGER jt ON sj.job_id = jt.job_id
+        WHERE sj.status = 'ACTIVE'
+        ORDER BY sj.job_id
+    </select>
+
+</mapper>

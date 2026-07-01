@@ -1,0 +1,25 @@
+server:
+  port: 8081
+
+spring:
+  datasource:
+    url: jdbc:sqlserver://localhost:1433;databaseName=jasper_scheduler;encrypt=false
+    username: sa
+    password: changeme
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+jasper:
+  server:
+    url: http://localhost:8085/jasperserver
+    username: jasperadmin
+    password: jasperadmin
+  output-locale: en_GB
+
+logging:
+  level:
+    com.jasper.scheduler: DEBUG

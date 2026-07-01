@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="layout/layout :: head('Schedule Job')"></head>
+<body class="app-body">
+<aside th:replace="layout/layout :: sidebar('jobs')"></aside>
+<div class="main-wrap">
+    <header th:replace="layout/layout :: topnav"></header>
+    <main class="main">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Schedule Job</h1>
+                <p class="page-sub">레포트 이메일 발송 Job 관리</p>
+            </div>
+            <a th:href="@{/jobs/new}" class="btn btn-primary">
+                <i class="ti ti-plus"></i>Job 추가
+            </a>
+        </div>
+
+        <div class="filter-bar">
+            <select class="select-xs" onchange="location.href='/jobs?status='+this.value">
+                <option value="" th:selected="${selectedStatus==null}">전체 상태</option>
+                <option value="ACTIVE"   th:selected="${selectedStatus=='ACTIVE'}">ACTIVE</option>
+                <option value="PAUSED"   th:selected="${selectedStatus=='PAUSED'}">PAUSED</option>
+                <option value="DISABLED" th:selected="${selectedStatus=='DISABLED'}">DISABLED</option>
+            </select>
+        </div>
+
+        <div class="card">
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Job 이름</th>
+                        <th>레포트</th>
+                        <th>Trigger</th>
+                        <th>출력 형식</th>
+                        <th>상태</th>
+                        <th>등록자</th>
+                        <th>등록일</th>
+                        <th style="text-align:center">관리</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr th:each="j : ${jobs}" class="data-row">
+                        <td class="fw-500" th:text="${j.jobLabel}">-</td>
+                        <td class="text-sm text-secondary" th:text="${j.reportName}">-</td>
+                        <td>
+                            <span th:if="${j.triggerType == 'CALENDAR'}" class="badge badge-info"
+                                  th:text="${j.cronExpression}">-</span>
+                            <span th:if="${j.triggerType == 'SIMPLE'}" class="badge badge-gray"
+                                  th:text="'매 '+${j.recurrenceInterval}+' '+${j.recurrenceIntervalUnit}">-</span>
+                        </td>
+                        <td th:text="${j.outputFormats}">-</td>
+                        <td>
+                            <span th:if="${j.status=='ACTIVE'}"   class="badge badge-active">ACTIVE</span>
+                            <span th:if="${j.status=='PAUSED'}"   class="badge badge-paused">PAUSED</span>
+                            <span th:if="${j.status=='DISABLED'}" class="badge badge-disabled">DISABLED</span>
+                        </td>
+                        <td class="text-sm" th:text="${j.createdBy}">-</td>
+                        <td class="text-sm text-secondary"
+                            th:text="${#temporals.format(j.createdAt,'yyyy-MM-dd')}">-</td>
+                        <td style="text-align:center;white-space:nowrap">
+                            <button class="btn-sm"
+                                    th:attr="onclick='runNow('+${j.jobId}+',\''+${j.jobLabel}+'\')'">
+                                <i class="ti ti-player-play"></i>실행
+                            </button>
+                            <a th:href="@{/jobs/{id}(id=${j.jobId})}" class="btn-sm">
+                                <i class="ti ti-edit"></i>수정
+                            </a>
+                            <a th:href="@{/jobs/{id}/copy(id=${j.jobId})}" class="btn-sm btn-copy">
+                                <i class="ti ti-copy"></i>복사
+                            </a>
+                            <button class="btn-sm btn-danger"
+                                    th:attr="onclick='deleteJob('+${j.jobId}+',\''+${j.jobLabel}+'\')'">
+                                <i class="ti ti-trash"></i>삭제
+                            </button>
+                        </td>
+                    </tr>
+                    <tr th:if="${#lists.isEmpty(jobs)}">
+                        <td colspan="8" class="empty-row">등록된 Job이 없습니다.</td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+</div>
+<div class="toast" id="toast"><i class="ti ti-check"></i><span id="toast-msg"></span></div>
+<script th:src="@{/js/main.js}"></script>
+<script>
+function runNow(id, name) {
+    if (!confirm('"' + name + '" Job을 지금 즉시 실행하시겠습니까?')) return;
+    apiFetch('/jobs/' + id + '/run', 'POST').then(r => {
+        if (r.success) showToast(r.message);
+        else alert(r.message);
+    });
+}
+function deleteJob(id, name) {
+    if (!confirm('"' + name + '" Job을 삭제하시겠습니까?')) return;
+    apiFetch('/jobs/' + id, 'DELETE').then(r => {
+        if (r.success) { showToast(r.message); setTimeout(()=>location.reload(), 800); }
+        else alert(r.message);
+    });
+}
+</script>
+</body>
+</html>
